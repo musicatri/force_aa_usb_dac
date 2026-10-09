@@ -1,17 +1,19 @@
 # USB DAC Output + Wireless Android Auto — Android 16
 
-Installable KernelSU module: `dist/usb-dac-force-1.2.0.zip`. Targets a OnePlus 12 on Android 16 (OxygenOS or LineageOS) with wireless Android Auto and a USB OTG DAC. No Vector/LSPosed, Zygisk, APK, system overlay or metamodule needed.
+Force audio output to usb audio device/dac when android auto is running
+Only tested on OnePlus 12 running LineageOS 26 with SukiSU
+Mostly written with codex
 
-**Device validation:** The owner reports v1.2 working on a OnePlus 12 running LineageOS with wireless Android Auto and a USB DAC. Individual call and microphone behavior has not been confirmed separately.
+## Why
 
-## What changed in 1.2
+After installing a aftermarket speaker, amp and a kicker keyloc in my Subaru VB WRX, I was still unsatified with the sound comming from my speakers. There isn't really an option to go with an aftermarket headunit in the VB WRX since a lot of the Eyssight controls and AC are intergrated into the stock starlink headunit. The stock headunit also features an unremovable eq curve for the stock speakers, which also really limits the bass output of the speakers. While the kicker keyloc and help reduce the bass rolloff and flatten the eq curve to a degree, there is still no option to fine tune the eq unless buying an expensive DSP. 
+Furthermore, the bass rolloff also varied in volume. I get less bass at higher volumes and more bass at lower volume. 
 
-LineageOS diagnostics show that v1.1's Android Auto mix updates succeeded and were verified, but strategy discovery failed with `NoSuchMethodException: android.media.IAudioService.getAudioProductStrategies []`. The probe crashed on the same method. These logs establish an API compatibility bug; they do not establish an audible-routing result.
+To get around this, I decicded to directly connect my amp to an extertal dac via a usb hub to my phone. While I am able to achieve good audio quality with this method, the starlink screen became mostly unfunctional. It is still possible to connect to andoird auto with the center screen, however, once connected, the audio will be forced to routed through android auto. Since no speakers are connected to the stock headunit there are no sound as a result. 
 
-Strategy discovery now selects a supported runtime API: the no-argument binder method, its boolean variant, or the static `AudioProductStrategy.getAudioProductStrategies()` native-backed getter used by older framework variants. The selected method is logged. Discovery is checked before any routing mutations, so an unsupported API or empty strategy list cannot leave Android Auto capture altered during startup. Strategy IDs remain discovered from the ROM rather than copied from OxygenOS.
+I created this module to force android to keep outputing to the connected USB audio device while android auto is running. This way, I can get navigation displayed on the starlink headunit while still have sound going through the usb DAC, and I am able to use Viper4Andoid as my DSP. 
 
-The capture parser also passes regression checks with the supplied LineageOS dumps: two live mixes, a changed Android Auto UID, and new registration addresses. The diagnostics collector now includes `build.txt` with module/ROM versions.
-
+Microphone doesn't seem to work currently as Subaru disables the internal microphone when no speakers are connected to the starlink headunit. 
 ## Behavior introduced in 1.1
 
 The supplied OnePlus dumps show `SMSL USB AUDIO` at `card=1;device=0`, recognized as a USB headset output. Apple Music is actively playing into Android Auto's 48 kHz remote submix, not into the DAC. Android Auto registers a separate 16 kHz mix for assistant and navigation audio. There is no active call or USB microphone in these snapshots. They predate this build and are evidence of the routing conflict, not validation of the module.
@@ -58,9 +60,9 @@ Files are placed in `/data/adb/modules/usb_dac_force/diagnostics/` and overwritt
 
 ## Calls, microphone and limits
 
-The build **requests every normal playback category on USB**, including call output. Stock OxygenOS's telephony HAL or communication arbitration can still select another route. Root communication-device selection and preferred strategy requests are implemented, but actual call output has not been verified. This is an experimental device-targeted build, not a guarantee that every path is forced.
+The build **requests every normal playback category on USB**, including call output. Root communication-device selection and preferred strategy requests are implemented, but actual call output has not been verified. This is an experimental device-targeted build, not a guarantee that every path is forced.
 
-The SMSL device exposes only an output in your dumps. It cannot supply a microphone. Microphone selection is left to Android; the phone's built-in mic may be used, but Bluetooth/call input behavior must be checked on the device. The module does not manufacture a USB input or force a capture preset.
+Microphone selection is left to Android; the phone's built-in mic may be used, but Bluetooth/call input behavior must be checked on the device. The module does not manufacture a USB input or force a capture preset.
 
 Direct per-track routing, an app's own USB driver, hardware ultrasound paths and OEM restrictions may override normal strategy preferences. Notification mute/DND state and existing volumes are retained. There is no bit-perfect bypass, USB gain boost or speaker hardware lockout.
 
@@ -84,6 +86,3 @@ No Android phone or head unit was attached to the build environment. The owner s
 
 References: [Android audio routing](https://source.android.com/docs/core/audio/combined-audio-routing), [Android 16 native mix matching](https://android.googlesource.com/platform/frameworks/av/+/refs/heads/android16-release/services/audiopolicy/common/managerdefinitions/src/AudioPolicyMix.cpp), [Android 16 AudioService](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android16-release/services/core/java/com/android/server/audio/AudioService.java), [KernelSU module guide](https://kernelsu.org/guide/module.html).
 
-## Credits
-
-Implementation, debugging and documentation were developed with **OpenAI Codex**. The project owner provided the requirements, device diagnostics and on-device testing that confirmed the LineageOS fix.
