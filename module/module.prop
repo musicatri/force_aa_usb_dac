@@ -1,0 +1,6 @@
+id=usb_dac_force
+name=USB DAC Output + Wireless Android Auto (Android 16)
+version=1.2.0
+versionCode=3
+author=Local build
+description=Bypasses verified Android Auto media/navigation capture mixes and requests USB playback and communication routes.

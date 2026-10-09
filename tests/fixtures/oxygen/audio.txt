@@ -1,0 +1,29 @@
+Audio policies:
+android.media.audiopolicy.AudioPolicyConfig:
+2 AudioMix, reg:-100:ap:1
+* route flags=0x2
+  rate=48000Hz
+  encoding=2
+  channels=0xC
+  ignore playback capture opt out=false
+  allow voice communication capture=false
+  specified mix type=0
+  match usage USAGE_MEDIA
+  match usage USAGE_GAME
+* route flags=0x2
+  rate=16000Hz
+  encoding=2
+  channels=0x4
+  ignore playback capture opt out=false
+  allow voice communication capture=false
+  specified mix type=0
+  match usage USAGE_ASSISTANT
+  match usage USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
+ Uid Device Affinities:
+ UserId Device Affinities:
+ Proxy:
+   is focus policy= false
+   media projection= null
+
+Events log: dynamic policy events (logged when command received by AudioService)
+01-01 00:00:00:000 registerAudioPolicy for test u/pid:10101/100 with config:reg:-100:ap:1 Mix:0-Typ:p-Rul:2 Mix:1-Typ:p-Rul:2 for virtual deviceId: 0

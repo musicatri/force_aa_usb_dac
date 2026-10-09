@@ -1,0 +1,19 @@
+ Audio Policy Mix:
+  Audio Policy Mix 1 (0x100):
+  - mix type: MIX_TYPE_PLAYERS
+  - Route Flags: MIX_ROUTE_FLAG_LOOP_BACK
+  - device type: AUDIO_DEVICE_OUT_REMOTE_SUBMIX
+  - device address: -100:ap:1mixp:0
+  - output: 10
+    - Criterion 0: RULE_MATCH_ATTRIBUTE_USAGE AUDIO_USAGE_MEDIA
+    - Criterion 1: RULE_MATCH_ATTRIBUTE_USAGE AUDIO_USAGE_GAME
+  Audio Policy Mix 2 (0x101):
+  - mix type: MIX_TYPE_PLAYERS
+  - Route Flags: MIX_ROUTE_FLAG_LOOP_BACK
+  - device type: AUDIO_DEVICE_OUT_REMOTE_SUBMIX
+  - device address: -100:ap:1mixp:1
+  - output: 11
+    - Criterion 0: RULE_MATCH_ATTRIBUTE_USAGE AUDIO_USAGE_ASSISTANT
+    - Criterion 1: RULE_MATCH_ATTRIBUTE_USAGE AUDIO_USAGE_ASSISTANCE_NAVIGATION_GUIDANCE
+
+ Audio sources (0):

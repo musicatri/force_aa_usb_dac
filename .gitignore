@@ -1,0 +1,13 @@
+/build/
+/diagnostics/
+/aa-audio.txt
+/aa-policy.txt
+/module/daemon.jar
+/module/daemon*.log
+/module/diagnostics/
+/module/daemon.lock
+/module/stop
+/module/disable
+/module/remove
+/dist/*
+!/dist/usb-dac-force-1.2.0.zip
