@@ -1,8 +1,10 @@
 # USB DAC Output + Wireless Android Auto — Android 16
 
 Force audio output to usb audio device/dac when android auto is running
+
 Only tested on OnePlus 12 running LineageOS 26 with SukiSU
-Mostly written with codex
+
+**Mostly written with codex**
 
 ## Why
 
@@ -85,4 +87,4 @@ Local checks: compile Java, generate DEX, check shell syntax and ZIP integrity. 
 No Android phone or head unit was attached to the build environment. The owner subsequently confirmed v1.2 works on their LineageOS setup. Other ROMs, individual navigation/call behavior and microphone selection still need device-specific validation.
 
 References: [Android audio routing](https://source.android.com/docs/core/audio/combined-audio-routing), [Android 16 native mix matching](https://android.googlesource.com/platform/frameworks/av/+/refs/heads/android16-release/services/audiopolicy/common/managerdefinitions/src/AudioPolicyMix.cpp), [Android 16 AudioService](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android16-release/services/core/java/com/android/server/audio/AudioService.java), [KernelSU module guide](https://kernelsu.org/guide/module.html).
-
+    
