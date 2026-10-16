@@ -14,8 +14,8 @@ from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 with ZipFile('module/daemon.jar','w',ZIP_DEFLATED) as z:
     z.write('build/dex/classes.dex','classes.dex')
-with ZipFile('dist/usb-dac-force-1.2.0.zip','w',ZIP_DEFLATED) as z:
+with ZipFile('dist/usb-dac-force-1.3.0.zip','w',ZIP_DEFLATED) as z:
     for p in sorted(Path('module').iterdir()):
         if p.is_file(): z.write(p,p.name)
 PACK
-printf 'Built dist/usb-dac-force-1.2.0.zip\n'
+printf 'Built dist/usb-dac-force-1.3.0.zip\n'

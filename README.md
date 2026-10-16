@@ -16,7 +16,7 @@ To get around this, I decicded to directly connect my amp to an extertal dac via
 I created this module to force android to keep outputing to the connected USB audio device while android auto is running. This way, I can get navigation displayed on the starlink headunit while still have sound going through the usb DAC, and I am able to use Viper4Andoid as my DSP. 
 
 Microphone doesn't seem to work currently as Subaru disables the internal microphone when no speakers are connected to the starlink headunit. 
-## Behavior introduced in 1.1
+## Routing behavior (v1.3)
 
 The supplied OnePlus dumps show `SMSL USB AUDIO` at `card=1;device=0`, recognized as a USB headset output. Apple Music is actively playing into Android Auto's 48 kHz remote submix, not into the DAC. Android Auto registers a separate 16 kHz mix for assistant and navigation audio. There is no active call or USB microphone in these snapshots. They predate this build and are evidence of the routing conflict, not validation of the module.
 
@@ -24,15 +24,24 @@ While the DAC is present, the daemon:
 
 - Identifies Android Auto's actual package UID and matches its AudioService registration events to its live native capture mixes. It does not hardcode the dump's UID or registration addresses.
 - Replaces the matching media/game and assistant/navigation capture criteria with a UID rule that cannot match an installed Android app. It preserves the registered capture endpoints rather than unregistering Android Auto's policy. Audio intended for those mixes can then take the normal USB output route; Android Auto's audio streams receive no matching playback.
-- Requests USB as the preferred output for the normal playback strategies every two seconds. It skips internal patch/rerouting strategies and the call-assistant uplink strategy.
-- Requests USB as the communication device with a process-owned binder token, retries every ten seconds when the reported device is different, and logs the reported route separately from request acceptance.
+- Requests USB as the preferred output for normal playback strategies once, five seconds after detecting an Android Auto connection with USB attached, or a DAC connection while Android Auto is running. It skips internal patch/rerouting strategies and the call-assistant uplink strategy.
+- Requests USB as the communication device once with a process-owned binder token. It does not keep correcting the communication route.
 
-Mix checks run about every six seconds, plus immediately when the USB port id changes. Android Auto can still use the head-unit display and controls; this module targets its audio capture routing. Whether Android Auto stays connected with silent capture streams requires a phone/head-unit test.
+The daemon observes output devices approximately once a second without changing routing. Android Auto is detected through its verified audio-policy capture endpoints. When remote-submix addresses change, dumps are read to verify ownership; a stable verified connection needs only device enumeration.
+
+A single routing attempt is scheduled **five seconds after either**:
+
+- Android Auto connects with the selected USB DAC already attached.
+- The selected USB DAC connects or reconnects while Android Auto is running.
+
+Both must stay available for the full delay. Disconnecting either cancels the pending attempt and restores owned routing once. Replacing the selected DAC restarts the delay for that device. If the daemon starts with both already connected, it waits five seconds from detection. Device observation and command execution can add latency; the delay starts at detection, not at the head-unit UI transition.
+
+There is no periodic routing reapply, mix repair, communication retry or automatic retry after a failed attempt. A mix recreation or another app changing the route while the same pair remains connected does not schedule another attempt. Reconnect Android Auto or the selected DAC to try again. This release removes continuous route enforcement because repeated updates were reported to pause playback. Android Auto can still use the head-unit display and controls.
 
 ## Install or upgrade
 
 1. If an earlier version is installed, use its Action button to stop it first; reboot after installing the update.
-2. Install `dist/usb-dac-force-1.2.0.zip` through KernelSU Manager → Modules.
+2. Install `dist/usb-dac-force-1.3.0.zip` through KernelSU Manager → Modules.
 3. Turn **off** Developer options → **Disable USB audio routing**.
 4. Reboot, plug in the DAC, connect wireless Android Auto, and start playback. Pause/resume or restart the music app if it retains an old track route.
 5. Verify music, a navigation prompt, assistant speech, a notification and a normal phone call individually. Requests accepted by the policy service are not proof of audible output.
@@ -58,7 +67,7 @@ sh /data/adb/modules/usb_dac_force/diagnose.sh
 
 Files are placed in `/data/adb/modules/usb_dac_force/diagnostics/` and overwritten on the next collection; copy each collection before running again. Relevant files are `build.txt`, `probe.txt`, `daemon.log`, `audio.txt`, `policy.txt` and `logcat.txt`. Dumps/logcat can contain app names, device identifiers and other personal data; review them before sharing.
 
-`No verified Android Auto capture mixes` means the module could not verify a supported mix from the available logs, or Android Auto is disconnected. It applies USB strategy preferences but makes no claim to bypass an unrecognized capture route. Unknown mix shapes or rules from other controllers are left alone. A routing error repeated five times stops the daemon and attempts restoration. Reboot to retry after correcting the error.
+If no supported Android Auto capture endpoints can be verified, no connection is detected and no routing attempt is scheduled. Unknown mix shapes or rules from other controllers are left alone. A routing failure is logged, partial changes are restored, and no further routing attempt is made while the same pair stays connected. Reconnect Android Auto or the selected DAC to try again after correcting the error.
 
 ## Calls, microphone and limits
 
@@ -72,7 +81,7 @@ Native policy mix updates use Android 16 hidden framework APIs. AOSP 16 identifi
 
 ## Stop, disconnect and uninstall
 
-Disconnecting USB restores owned mix rules and playback preferences, then normal routing resumes. Allow several seconds for dump reads and route updates. KernelSU's Action button creates a `stop` file; the daemon restores its rules and preferences, releases its communication request and exits. Disabling/removing the module is also detected.
+Disconnecting Android Auto or USB restores owned mix rules and playback preferences, then normal routing resumes. Allow several seconds for dump reads and route updates. KernelSU's Action button creates a `stop` file; the daemon restores its rules and preferences, releases its communication request and exits. Disabling/removing the module is also detected.
 
 For uninstall, use Action, wait for `Stopped; preferences restored` in the log, remove the module, and reboot. Delete `/data/adb/modules/usb_dac_force/stop` and reboot to resume a stopped module. Installing an update clears the stop flag; reboot after upgrading.
 
@@ -82,9 +91,9 @@ Restoration checks native mix identity and the module's exact UID marker before 
 
 `bash build.sh` requires Android SDK platform 36, build tools 36.0.0 and a JDK. Defaults use `$HOME/Android/Sdk` and Android Studio's bundled JBR; override `ANDROID_HOME`/`JAVA_HOME` as needed. Sources are in `src/dev/usbdac/`.
 
-Local checks: compile Java, generate DEX, check shell syntax and ZIP integrity. `tests/StrategyAccessTest.java` reproduces the missing-binder-method condition and checks both binder variants, native fallback, empty results and permission-error propagation. `tests/RoutingDumpTest.java` exercises sanitized fixtures representing the observed OxygenOS and LineageOS mix layouts, package ownership, native confirmation, dynamic registration addresses, marker recovery and rejection of another controller's changes. Run `bash test.sh` to execute the regression tests. The fixtures use fictional UIDs and registration addresses. Personal phone dumps and diagnostics are excluded from this repository; tests are not packaged in the module ZIP.
+Local checks: compile Java, generate DEX, check shell syntax and ZIP integrity. `tests/OnceAfterConnectionTest.java` verifies the five-second delay, single attempt per AA/DAC attachment, DAC attachment during an AA session, replacement, disconnect cancellation, already-connected startup, and absence of retries after a failed attempt. `tests/StrategyAccessTest.java` reproduces the missing-binder-method condition and checks both binder variants, native fallback, empty results and permission-error propagation. `tests/RoutingDumpTest.java` exercises sanitized fixtures representing the observed OxygenOS and LineageOS mix layouts, package ownership, native confirmation, dynamic registration addresses, marker recovery and rejection of another controller's changes. Run `bash test.sh` to execute the regression tests. The fixtures use fictional UIDs and registration addresses. Personal phone dumps and diagnostics are excluded from this repository; tests are not packaged in the module ZIP.
 
-No Android phone or head unit was attached to the build environment. The owner subsequently confirmed v1.2 works on their LineageOS setup. Other ROMs, individual navigation/call behavior and microphone selection still need device-specific validation.
+No Android phone or head unit was attached to the build environment. The owner subsequently confirmed v1.2 works on their LineageOS setup. The v1.3 timing change has been tested locally and needs on-device validation. Other ROMs, individual navigation/call behavior and microphone selection still need device-specific validation.
 
 References: [Android audio routing](https://source.android.com/docs/core/audio/combined-audio-routing), [Android 16 native mix matching](https://android.googlesource.com/platform/frameworks/av/+/refs/heads/android16-release/services/audiopolicy/common/managerdefinitions/src/AudioPolicyMix.cpp), [Android 16 AudioService](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/android16-release/services/core/java/com/android/server/audio/AudioService.java), [KernelSU module guide](https://kernelsu.org/guide/module.html).
     

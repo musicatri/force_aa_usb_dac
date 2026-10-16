@@ -114,70 +114,74 @@ public final class UsbDac {
         RandomAccessFile lockFile = new RandomAccessFile(new File(dir,"daemon.lock"),"rw");
         FileLock lock = lockFile.getChannel().tryLock();
         if (lock == null) { log("Another daemon is already running"); return; }
-        restoredExtras = false;
         Runtime.getRuntime().addShutdownHook(new Thread(UsbDac::restore));
         String address = args.length > 1 ? args[1] : "";
-        log("Version 1.2.0 started; USB address filter=" + (address.isEmpty() ? "any" : address));
-        int consecutiveErrors = 0;
-        int ticks = 0;
-        int lastPort = -1;
+        log("Version 1.3.0 started; one routing attempt 5 seconds after Android Auto or USB connects while both are available; USB filter="
+            + (address.isEmpty() ? "any" : address));
+        OnceAfterConnection once = new OnceAfterConnection();
         try {
-        while (true) {
-            if (new File(dir, "disable").exists() || new File(dir, "remove").exists()
-                    || new File(dir, "stop").exists()) {
-                restore();
-                if (saved.isEmpty() && restoredExtras) { log("Stopped; preferences restored"); return; }
-                SystemClock.sleep(2000);
-                continue;
-            }
-            try {
-                AudioDeviceInfo device = usb(address);
-                if (device == null) {
+            while (true) {
+                if (new File(dir, "disable").exists() || new File(dir, "remove").exists()
+                        || new File(dir, "stop").exists()) {
                     restore();
-                    lastPort = -1;
-                    log("No matching USB output; normal routing");
-                } else {
-                    restoredExtras = false;
-                    if (device.getId() != lastPort || ticks % 3 == 0) aa.enforceMixes();
-                    lastPort = device.getId();
-                    Object attributes = Class.forName("android.media.AudioDeviceAttributes")
-                        .getConstructor(AudioDeviceInfo.class).newInstance(device);
-                    List<?> target = Collections.singletonList(attributes);
-                    int applied = 0;
-                    for (Object strategy : strategies()) {
-                        String name = (String) strategy.getClass().getMethod("getName").invoke(strategy);
-                        if (name.contains("REROUTING") || name.contains("PATCH") || name.contains("CALL_ASSISTANT")) continue;
-                        int id = (Integer) strategy.getClass().getMethod("getId").invoke(strategy);
-                        List<?> before = current(id);
-                        if (!before.equals(target)) {
-                            check(call(set, id, target));
-                            if (!saved.containsKey(id)) saved.put(id, before);
-                            owned.put(id, target);
-                        }
-                        applied++;
+                    if (saved.isEmpty() && restoredExtras) { log("Stopped; preferences restored"); return; }
+                    SystemClock.sleep(1000);
+                    continue;
+                }
+                try {
+                    AudioDeviceInfo device = usb(address);
+                    boolean connected = aa.connectionPresent();
+                    OnceAfterConnection.Event event = once.observe(connected, device == null ? 0 : device.getId(), SystemClock.elapsedRealtime());
+                    if (event == OnceAfterConnection.Event.SCHEDULED) {
+                        log("Android Auto and USB available; single routing attempt scheduled in 5 seconds");
+                    } else if (event == OnceAfterConnection.Event.DISCONNECTED) {
+                        log("Android Auto or USB disconnected; pending attempt cancelled; next connection will schedule a new attempt");
+                        if (!saved.isEmpty() || !restoredExtras) restore();
                     }
-                    aa.communication(device, attributes);
-                    if (applied == 0) throw new IllegalStateException("No audio strategies exposed");
-                    log("Preferred USB " + device.getProductName() + " address=" + device.getAddress()
-                        + " for " + applied + " strategies (policy preference, not verified playback)");
+                    if (event == OnceAfterConnection.Event.APPLY) {
+                        try { applyOnce(device); }
+                        catch (Exception e) {
+                            Throwable cause = e.getCause() == null ? e : e.getCause();
+                            log("Single routing attempt failed (no automatic retry): " + cause);
+                            restore();
+                        }
+                    }
+                } catch (Exception e) {
+                    Throwable cause = e.getCause() == null ? e : e.getCause();
+                    // Observation failures must never trigger repeated routing or imply disconnect.
+                    log("Connection observation failed; routing unchanged: " + cause);
                 }
-                consecutiveErrors = 0;
-            } catch (Exception e) {
-                Throwable cause = e.getCause() == null ? e : e.getCause();
-                log("Routing error: " + cause);
-                lastPort = -1; // Retry failed mix enforcement on the next poll, not only every third poll.
-                if (++consecutiveErrors >= 5) {
-                    restore();
-                    throw new IllegalStateException("Repeated routing failures; inspect log and SELinux denials", cause);
-                }
+                SystemClock.sleep(1000);
             }
-            ticks++;
-            SystemClock.sleep(2000);
-        }
         } finally {
             restore();
             lock.release();
             lockFile.close();
         }
+    }
+    static void applyOnce(AudioDeviceInfo device) throws Exception {
+        List<?> available = strategies();
+        Object attributes = Class.forName("android.media.AudioDeviceAttributes")
+            .getConstructor(AudioDeviceInfo.class).newInstance(device);
+        List<?> target = Collections.singletonList(attributes);
+        restoredExtras = false;
+        aa.applyMixesOnce();
+        int applied = 0;
+        for (Object strategy : available) {
+            String name = (String) strategy.getClass().getMethod("getName").invoke(strategy);
+            if (name.contains("REROUTING") || name.contains("PATCH") || name.contains("CALL_ASSISTANT")) continue;
+            int id = (Integer) strategy.getClass().getMethod("getId").invoke(strategy);
+            List<?> before = current(id);
+            if (!before.equals(target)) {
+                check(call(set, id, target));
+                if (!saved.containsKey(id)) saved.put(id, before);
+                owned.put(id, target);
+            }
+            applied++;
+        }
+        if (applied == 0) throw new IllegalStateException("No playback strategies exposed");
+        aa.communicationOnce(device, attributes);
+        log("Single routing attempt complete: USB " + device.getProductName() + " address="
+            + device.getAddress() + " for " + applied + " strategies. No reapply until Android Auto or the selected USB output reconnects");
     }
 }

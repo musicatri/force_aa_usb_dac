@@ -11,3 +11,4 @@
 /module/remove
 /dist/*
 !/dist/usb-dac-force-1.2.0.zip
+!/dist/usb-dac-force-1.3.0.zip

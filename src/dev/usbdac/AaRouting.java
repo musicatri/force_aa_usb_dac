@@ -24,7 +24,8 @@ final class AaRouting {
     private final Method communicationSet;
     private final Method communicationGet;
     private boolean callOwned;
-    private long lastCallRequest;
+    private Set<String> observedSubmixes = new HashSet<>();
+    private Set<String> verifiedSubmixes = new HashSet<>();
     private int aaUid = -1;
     private long lastUidRead;
 
@@ -73,6 +74,28 @@ final class AaRouting {
         return RoutingDump.parse(command("/system/bin/dumpsys","audio"),
             command("/system/bin/dumpsys","media.audio_policy"),uid());
     }
+    /** Read-only observation. Stable sessions need only output-device enumeration. */
+    boolean connectionPresent() throws Exception {
+        AudioDeviceInfo[] outputs = (AudioDeviceInfo[]) UsbDac.enumerate.invoke(null,
+            android.media.AudioManager.GET_DEVICES_OUTPUTS);
+        Set<String> addresses = new HashSet<>();
+        for (AudioDeviceInfo device : outputs) {
+            if (device.getType() == AudioDeviceInfo.TYPE_REMOTE_SUBMIX) addresses.add(device.getAddress());
+        }
+        if (addresses.isEmpty()) {
+            observedSubmixes.clear(); verifiedSubmixes.clear();
+            return false;
+        }
+        if (!addresses.equals(observedSubmixes) || verifiedSubmixes.isEmpty()) {
+            Map<String,RoutingDump.Mix> mixes = snapshot();
+            Set<String> verified = new HashSet<>(mixes.keySet());
+            verified.retainAll(addresses);
+            // Commit observation only after successful reads; errors are not disconnections.
+            observedSubmixes = addresses;
+            verifiedSubmixes = verified;
+        }
+        return !verifiedSubmixes.isEmpty();
+    }
     private Object rule(RoutingDump.Mix mix, boolean block) throws Exception {
         Class<?> builderClass = Class.forName("android.media.audiopolicy.AudioMixingRule$Builder");
         Object builder = builderClass.getConstructor().newInstance();
@@ -103,10 +126,10 @@ final class AaRouting {
         Array.set(mixes,0,audioMix); Array.set(rules,0,replacement);
         UsbDac.check(update.invoke(null,mixes,rules));
     }
-    void enforceMixes() throws Exception {
+    void applyMixesOnce() throws Exception {
         Map<String, RoutingDump.Mix> mixes = snapshot();
         if (aaUid < 0) throw new IllegalStateException("Android Auto package UID unavailable");
-        if (mixes.isEmpty()) UsbDac.log("No verified Android Auto capture mixes; USB preferences only. If Android Auto is active, collect diagnostics.");
+        if (mixes.isEmpty()) throw new IllegalStateException("Android Auto capture mixes disappeared before the single routing attempt");
         for (RoutingDump.Mix mix : mixes.values()) {
             if (mix.blocked()) {
                 if (!originals.containsKey(mix.address)) {
@@ -134,17 +157,15 @@ final class AaRouting {
         }
         if (!mixes.isEmpty()) UsbDac.log("Verified native Android Auto capture rules no longer match installed app UIDs");
     }
-    void communication(AudioDeviceInfo device, Object attributes) throws Exception {
+    void communicationOnce(AudioDeviceInfo device, Object attributes) throws Exception {
         Object actual = communicationGet.invoke(UsbDac.audio);
         boolean matches = actual instanceof Integer ? ((Integer)actual) == device.getId() : attributes.equals(actual);
         if (matches) { UsbDac.log("Communication output reports USB port " + device.getId()); return; }
-        if (System.currentTimeMillis()-lastCallRequest < 10000) return;
-        lastCallRequest = System.currentTimeMillis();
         Object selected = communicationSet.getParameterTypes()[1] == int.class ? Integer.valueOf(device.getId()) : attributes;
         Object accepted = communicationSet.invoke(UsbDac.audio,callToken,selected,attribution);
         if (Boolean.TRUE.equals(accepted)) {
             callOwned = true;
-            UsbDac.log("USB communication request accepted; awaiting actual route (calls unverified)");
+            UsbDac.log("USB communication request accepted once; actual call routing remains unverified");
         } else UsbDac.log("ROM rejected USB communication request; calls may remain on another device");
     }
     void restore() throws Exception {
